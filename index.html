@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>استعادة كلمة مرور إدارة الاحتياط | مدرسة رملة</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f6f7fa;color:#263348;font-family:Tahoma,Arial,sans-serif;min-height:100vh;display:grid;place-items:center;padding:22px}.card{background:#fff;width:min(100%,460px);padding:30px;border-radius:20px;box-shadow:0 12px 40px #1a243218}h1{font-size:24px;color:#90364e;margin:0 0 12px}p{line-height:1.9;color:#536174}label{display:block;margin:15px 0 7px;font-weight:bold}input{width:100%;border:1px solid #cbd4e0;border-radius:9px;padding:14px;font:inherit;direction:ltr;text-align:left}button{margin-top:20px;background:#90364e;color:white;border:0;border-radius:10px;padding:14px;font:inherit;font-weight:bold;width:100%;cursor:pointer}button:disabled{opacity:.65;cursor:wait}.msg{margin-top:14px;line-height:1.8;white-space:pre-wrap;overflow-wrap:anywhere}.error{color:#aa2634}.ok{color:#176642}.info{color:#536174}.hide{display:none}small{display:block;margin-top:18px;color:#657080;line-height:1.7}
+</style>
+</head>
+<body>
+<main class="card">
+<h1>إدارة الاحتياط اليومي</h1>
+<p id="intro">استعادة كلمة مرور حساب الإدارة في مدرسة رملة أم المؤمنين (5–6).</p>
+<section id="request"><form id="requestForm"><label for="email">البريد الإلكتروني للحساب الإداري</label><input id="email" type="email" autocomplete="email" required><button id="send" type="submit" disabled>جارٍ تهيئة الاتصال...</button></form></section>
+<section id="change" class="hide"><form id="changeForm"><label for="password">كلمة المرور الجديدة</label><input id="password" type="password" autocomplete="new-password" minlength="12" required><label for="confirm">تأكيد كلمة المرور الجديدة</label><input id="confirm" type="password" autocomplete="new-password" minlength="12" required><button id="update" type="submit">حفظ كلمة المرور الجديدة</button></form></section>
+<div id="msg" class="msg info" role="status" aria-live="polite">جارٍ تهيئة الاتصال الآمن...</div>
+<small>لا تشاركي رابط الاستعادة أو كلمة المرور مع أي شخص. استخدمي هذه الصفحة فقط من رابط GitHub المنشور الخاص بإدارة الاحتياط.</small>
+</main>
+<script>
+'use strict';
+// إعدادات الاتصال العامة فقط؛ لا تضعي مفتاح service_role أو كلمة مرور هنا.
+const SUPABASE_URL = 'https://sqnhlgrjcszjrzcrovmj.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_oyqZ1rx1Ee3K49LoH79kFg_uD5Kk_Jr';
+const $ = id => document.getElementById(id);
+let client = null, recovery = false;
+function showMessage(message, type='info') { $('msg').textContent=message; $('msg').className='msg '+type; }
+function setReady(ready) { $('send').disabled=!ready; $('send').textContent=ready?'إرسال رابط استعادة جديد':'تعذر تهيئة الاتصال'; }
+function withTimeout(promise, ms=18000) { return Promise.race([promise,new Promise((_,reject)=>setTimeout(()=>reject(new Error('انتهت مهلة الاتصال. تحققي من الإنترنت وحاولي مجددًا.')),ms))]); }
+function loadScript(src) { return new Promise((resolve,reject)=>{const s=document.createElement('script');s.src=src;s.async=true;s.onload=resolve;s.onerror=()=>reject(new Error('تعذر تحميل المكتبة'));document.head.appendChild(s);}); }
+async function loadSupabase() {
+  if(window.supabase && typeof window.supabase.createClient==='function') return;
+  const sources=['https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js','https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js'];
+  for(const src of sources) { try { await withTimeout(loadScript(src),10000); if(window.supabase?.createClient)return; } catch(e) { /* جربي المصدر الاحتياطي */ } }
+  throw new Error('تعذر تحميل مكتبة Supabase. تحققي من اتصال الإنترنت أو إعدادات حجب المواقع.');
+}
+function enterRecoveryMode() {
+  if(recovery)return;
+  recovery=true;
+  $('request').classList.add('hide');
+  $('change').classList.remove('hide');
+  $('intro').textContent='أدخلي كلمة مرور جديدة لحساب إدارة الاحتياط.';
+  showMessage('تم فتح رابط الاستعادة. أدخلي كلمة مرور جديدة لا تقل عن 12 حرفًا.','ok');
+}
+async function initialize() {
+  try {
+    if(location.protocol!=='https:')throw new Error('افتحي الصفحة من رابط GitHub Pages الآمن، وليس من ملف على الجهاز.');
+    const url=SUPABASE_URL.trim();
+    if(!/^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(url))throw new Error('عنوان مشروع Supabase غير صالح.');
+    if(!SUPABASE_PUBLISHABLE_KEY.trim())throw new Error('مفتاح Supabase العام مفقود.');
+    await loadSupabase();
+    client=window.supabase.createClient(url,SUPABASE_PUBLISHABLE_KEY.trim(),{
+      auth:{detectSessionInUrl:true,autoRefreshToken:false,persistSession:false,flowType:'implicit'}
+    });
+    client.auth.onAuthStateChange((event)=>{if(event==='PASSWORD_RECOVERY')enterRecoveryMode();});
+    setReady(true);
+    showMessage('الاتصال جاهز. يمكنك إرسال رابط الاستعادة.','ok');
+    if(location.hash.includes('type=recovery') || new URLSearchParams(location.search).has('code')) {
+      try {
+        const {data,error}=await withTimeout(client.auth.getSession(),15000);
+        if(error)throw error;
+        if(data?.session)enterRecoveryMode();
+        else showMessage('رابط الاستعادة غير صالح أو انتهت صلاحيته. اطلبي رابطًا جديدًا.','error');
+      }catch(e){showMessage('تعذر التحقق من رابط الاستعادة: '+e.message,'error');}
+    }
+  }catch(e){setReady(false);showMessage('تعذر تهيئة الاتصال: '+e.message,'error');}
+}
+$('requestForm').addEventListener('submit',async e=>{
+  e.preventDefault();
+  if(!client){showMessage('الاتصال غير جاهز. أعيدي تحميل الصفحة.','error');return;}
+  const button=$('send');button.disabled=true;button.textContent='جارٍ الإرسال...';showMessage('جارٍ إرسال طلب الاستعادة...','info');
+  try {
+    const redirectTo=location.origin+location.pathname;
+    const {error}=await withTimeout(client.auth.resetPasswordForEmail($('email').value.trim(),{redirectTo}),18000);
+    if(error)throw error;
+    showMessage('تم إرسال الطلب. إذا كان البريد مسجلًا ومسموحًا بالإرسال، ستصلك رسالة استعادة. استخدمي أحدث رسالة فقط.','ok');
+  }catch(err){showMessage('تعذر إرسال طلب الاستعادة: '+err.message,'error');}
+  finally{button.disabled=false;button.textContent='إرسال رابط استعادة جديد';}
+});
+$('changeForm').addEventListener('submit',async e=>{
+  e.preventDefault();
+  if(!client || !recovery){showMessage('افتحي رابط الاستعادة الصالح من البريد أولًا.','error');return;}
+  const password=$('password').value;
+  if(password!==$('confirm').value){showMessage('كلمتا المرور غير متطابقتين.','error');return;}
+  const button=$('update');button.disabled=true;button.textContent='جارٍ الحفظ...';showMessage('جارٍ حفظ كلمة المرور...','info');
+  try {
+    const {error}=await withTimeout(client.auth.updateUser({password}),18000);
+    if(error)throw error;
+    await withTimeout(client.auth.signOut(),10000).catch(()=>{});
+    $('change').classList.add('hide');
+    showMessage('تم تحديث كلمة المرور بنجاح. افتحي مشروع إدارة الاحتياط وسجّلي الدخول بكلمة المرور الجديدة.','ok');
+    if(location.hash)history.replaceState(null,'',location.pathname);
+  }catch(err){showMessage('تعذر تغيير كلمة المرور: '+err.message,'error');}
+  finally{button.disabled=false;button.textContent='حفظ كلمة المرور الجديدة';}
+});
+initialize();
+</script>
+</body>
+</html>
